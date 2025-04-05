@@ -12,3 +12,4 @@ urllib3
 plotly
 biopython
 google-generativeai
+ipython_genutils
