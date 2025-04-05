@@ -14,4 +14,3 @@ biopython
 google-generativeai
 ipython_genutils
 Pillow
-pycairo
