@@ -1,6 +1,0 @@
-streamlit
-py3Dmol
-rdkit
-requests
-stmol
-ipywidgets
