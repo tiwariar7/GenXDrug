@@ -249,12 +249,36 @@ if page == "Protein Structure Prediction":
             relax_prediction = st.checkbox("Relax Prediction", value=False)
             
             st.markdown("### MSA Alignment (Optional)")
+            # Create MSA sequence that matches the input sequence length
+            if sequence:
+                seq_length = len(re.sub(r'\s+', '', sequence))
+                msa_sequence = f">BQXYMDHSRWGGVPIWVK\n{sequence}\n>A0A076V4A1_9HIV1\n{'-' * seq_length}\n>BQXYMDHSRWGGVPIWVK\n{sequence}\n>A0A076V4A1_9HIV1\n{'-' * seq_length}\n>BQXYMDHSRWGGVPIWVK\n{sequence}\n>A0A076V4A1_9HIV1\n{'-' * seq_length}"
+            else:
+                msa_sequence = ">BQXYMDHSRWGGVPIWVK\nGGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC\n>A0A076V4A1_9HIV1\n----------------------------------------------------------------------\n>BQXYMDHSRWGGVPIWVK\nGGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC\n>A0A076V4A1_9HIV1\n----------------------------------------------------------------------\n>BQXYMDHSRWGGVPIWVK\nGGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC\n>A0A076V4A1_9HIV1\n----------------------------------------------------------------------"
+
             msa_sequence = st.text_area(
                 "MSA Sequence",
-                value=">BQXYMDHSRWGGVPIWVK\nGGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC\n>A0A076V4A1_9HIV1\n------------------------------------QSNPPPNHEGTRQARRNRRRRWRERQRQ----------------------------------",
+                value=msa_sequence,
                 height=150,
-                help="Enter MSA alignment in A3M format"
+                help="Enter MSA alignment in A3M format. The sequence length must match the input protein sequence."
             )
+
+            # Add validation for MSA sequence
+            if model == "OpenFold" and msa_sequence:
+                msa_lines = msa_sequence.split('\n')
+                if len(msa_lines) < 2:
+                    st.error("MSA sequence must contain at least one sequence")
+                    st.stop()
+                for i in range(0, len(msa_lines), 2):
+                    if i + 1 >= len(msa_lines):
+                        st.error("Invalid MSA format: missing sequence after header")
+                        st.stop()
+                    if not msa_lines[i].startswith('>'):
+                        st.error("Invalid MSA format: sequence header must start with '>'")
+                        st.stop()
+                    if len(msa_lines[i + 1]) != seq_length:
+                        st.error(f"MSA sequence length ({len(msa_lines[i + 1])}) does not match input sequence length ({seq_length})")
+                        st.stop()
 
     if st.button("Predict Structure"):
         if not sequence:
@@ -307,6 +331,10 @@ if page == "Protein Structure Prediction":
                     # Make the API request
                     response = requests.post(url, headers=headers, json=data, timeout=30)
                     
+                    # Save the response to output1.json (but don't show it)
+                    output_file = Path("output1.json")
+                    output_file.write_text(response.text)
+                    
                     if response.status_code == 200:
                         try:
                             response_data = response.json()
@@ -356,10 +384,6 @@ if page == "Protein Structure Prediction":
                     else:
                         st.error(f"Error: {response.status_code} - {response.text}")
                         st.stop()
-
-                    # Save the response to output1.json (but don't show it)
-                    output_file = Path("output1.json")
-                    output_file.write_text(response.text)
 
                     # Create 3D visualization
                     st.subheader("Predicted Structure")
