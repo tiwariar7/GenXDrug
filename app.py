@@ -95,7 +95,7 @@ def get_ai_response(user_query, context=""):
         return f"Error getting AI response: {str(e)}"
 
 # Sidebar navigation
-st.sidebar.title("NVIDIA Bio AI Tools")
+st.sidebar.title("GenXDrug : Advancing Research with Next-Gen Drug Solution ")
 page = st.sidebar.radio(
     "Select Tool",
     ["Protein Structure Prediction", "Molecular Generation", "BioNeMo", "Molecular Docking", "AI Assistant"]
