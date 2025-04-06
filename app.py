@@ -95,7 +95,7 @@ def get_ai_response(user_query, context=""):
         return f"Error getting AI response: {str(e)}"
 
 # Sidebar navigation
-st.sidebar.title("NVIDIA Bio AI Tools")
+st.sidebar.title("GenXDrug : Advancing Research with Next-Gen Drug Solution")
 page = st.sidebar.radio(
     "Select Tool",
     ["Protein Structure Prediction", "Molecular Generation", "BioNeMo", "Molecular Docking", "AI Assistant"]
@@ -302,8 +302,8 @@ if page == "Protein Structure Prediction":
                     st.write("Traceback:", traceback.format_exc())
 
 # Molecular Generation Page
-elif page == "GenXDrug":
-    st.title("GenXDrug : Advancing Research with Next-Gen Drug Solution ")
+elif page == "Molecular Generation":
+    st.title("Molecular Generation")
     st.markdown("""
     This tool allows you to generate new molecules using NVIDIA's GenMol API. You can:
     - Generate molecules from scratch
