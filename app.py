@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from rdkit import Chem
 from rdkit.Chem import Draw
+from rdkit.Chem import QED
 import safe as sf
 import datamol as dm
 from urllib3.util import Retry
@@ -31,6 +32,92 @@ from Bio.SeqRecord import SeqRecord
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from config import API_KEYS
+
+# GenMol Generator Class
+class GenMol_Generator:
+    __default_params__ = {
+        "num_molecules": 10,
+        "temperature": 1.0,
+        "noise": 0.0,
+        'step_size': 1,
+        'unique': True,
+        'scoring': 'QED'
+    }
+
+    def __init__(self, invoke_url = 'https://health.api.nvidia.com/v1/biology/nvidia/genmol/generate', auth = None, **kwargs):
+        self.invoke_url = invoke_url
+        self.auth = auth
+        self.session = Session()
+        self.num_generate = kwargs.get('num_generate', 1)
+        self.verbose = False
+        self.max_retries = kwargs.get('max_retries', 5)
+        self.retries = Retry(
+            total = self.max_retries,
+            backoff_factor = 0.1,
+            status_forcelist = [400],
+            allowed_methods = {'POST'},
+        )
+        self.session.mount(self.invoke_url, HTTPAdapter(max_retries = self.retries))
+
+    def produce(self, molecules, num_generate):
+        generated = []
+
+        for m in molecules:
+            safe_segs = m.split('.')
+            pos = np.random.randint(len(safe_segs))
+            safe_segs[pos] = '[*{%d-%d}]' % (len(safe_segs[pos]), len(safe_segs[pos]) + 5)
+            smiles = '.'.join(safe_segs)
+
+            new_molecules = self.inference(
+                smiles = smiles,
+                num_molecules = max(10, num_generate),
+                temperature = 1.5,
+                noise = 2.0
+            )
+
+            new_molecules = [_['smiles'] for _ in new_molecules]
+
+            if len(new_molecules) == 0:
+                return []
+
+            new_molecules = new_molecules[:(min(self.num_generate, len(new_molecules)))]
+            generated.extend(new_molecules)
+
+        self.molecules = list(set(generated))
+        return self.molecules
+
+    def inference(self, **params):
+        headers = {
+            "Authorization": "" if self.auth is None else "Bearer " + self.auth,
+            "Content-Type": "application/json"
+        }
+
+        task = GenMol_Generator.__default_params__.copy()
+        task.update(params)
+
+        if self.verbose:
+            print("TASK:", str(task))
+
+        json_data = {k : str(v) for k, v in task.items()}
+
+        response = self.session.post(self.invoke_url, headers=headers, json=json_data)
+        response.raise_for_status()
+
+        output = response.json()
+        assert output['status'] == 'success'
+        return output['molecules']
+
+# Utils class for molecule manipulation
+class Utils:
+    @staticmethod
+    def smiles2safe(smiles):
+        converter = sf.SAFEConverter()
+        return converter.encoder(smiles, allow_empty=True)
+
+    @staticmethod
+    def safe2smiles(safe):
+        converter = sf.SAFEConverter()
+        return converter.decoder(safe)
 
 # Set page config
 st.set_page_config(
@@ -322,7 +409,21 @@ elif page == "Molecular Generation":
     )
 
     if generation_type == "From SMILES":
-        input_smiles = st.text_input("Input SMILES", "CCS(=O)(=O)N1CC(CC#N)(n2cc(-c3ncnc4[nH]ccc34)cn2)C1")
+        input_smiles = st.text_input(
+            "Input SMILES",
+            value="CC(C=C(C(F)(F)F)C=C1OCC2=CC=CC=C2)=C1C3=CC=C(N(N=O)[C@@H]4CCCN(C)C4)N=N3",
+            help="Enter a valid SMILES string"
+        )
+        
+        # Validate SMILES
+        try:
+            testmol = dm.to_mol(input_smiles)
+            if testmol is None:
+                st.error("Invalid SMILES string. Please enter a valid SMILES.")
+                st.stop()
+        except Exception as e:
+            st.error(f"Error validating SMILES: {str(e)}")
+            st.stop()
     else:
         input_smiles = "[*{15-25}]"
 
@@ -339,58 +440,81 @@ elif page == "Molecular Generation":
         else:
             with st.spinner("Generating molecules..."):
                 try:
-                    clean_key = clean_api_key(api_key)
-                    url = "https://health.api.nvidia.com/v1/biology/nvidia/genmol/generate"
+                    # Initialize GenMol generator
+                    generator = GenMol_Generator(
+                        auth=clean_api_key(api_key),
+                        num_generate=num_molecules,
+                        max_retries=5
+                    )
 
-                    headers = {
-                        "Authorization": f"Bearer {clean_key}",
-                        "Content-Type": "application/json"
-                    }
-
-                    data = {
-                        "smiles": input_smiles,
-                        "num_molecules": num_molecules,
-                        "temperature": temperature,
-                        "noise": noise,
-                        "step_size": 1,
-                        "scoring": "QED"
-                    }
-
-                    response = requests.post(url, headers=headers, json=data)
-                    response.raise_for_status()
-                    molecules = response.json()["molecules"]
-
-                    if molecules:
-                        ms = [Chem.MolFromSmiles(_['smiles']) for _ in molecules]
-                        img = Draw.MolsToGridImage(
-                            ms,
-                            molsPerRow=4,
-                            subImgSize=(240, 150),
-                            legends=['QED ' + str(_['score']) for _ in molecules]
+                    # Generate molecules
+                    if generation_type == "From SMILES":
+                        # Convert SMILES to SAFE format
+                        safe_string = Utils.smiles2safe(input_smiles)
+                        # Generate new molecules
+                        molecules = generator.produce([safe_string], num_molecules)
+                    else:
+                        # Generate from scratch
+                        molecules = generator.inference(
+                            smiles=input_smiles,
+                            num_molecules=num_molecules,
+                            temperature=temperature,
+                            noise=noise
                         )
-                        st.image(img)
 
-                        st.subheader("Generation Statistics")
-                        scores = [float(_['score']) for _ in molecules]
-                        df = pd.DataFrame({'QED Score': scores})
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.write("Score Statistics")
-                            st.write(df.describe())
-                        
-                        with col2:
-                            st.write("Score Distribution")
-                            fig, ax = plt.subplots()
-                            df.hist(ax=ax, bins=10)
-                            st.pyplot(fig)
+                    if not molecules:
+                        st.error("No molecules were generated. Please try again with different parameters.")
+                        st.stop()
 
-                        st.subheader("Generated SMILES")
-                        for i, mol in enumerate(molecules):
-                            st.write(f"{i+1}. {mol['smiles']} (QED: {mol['score']})")
+                    # Extract SMILES strings from the response
+                    if isinstance(molecules[0], dict):
+                        smiles_list = [m['smiles'] for m in molecules]
+                    else:
+                        smiles_list = molecules
+
+                    # Convert SAFE to SMILES if needed
+                    if isinstance(smiles_list[0], str) and '[*{' in smiles_list[0]:
+                        smiles_list = [sf.SAFEConverter(ignore_stereo=True).decoder(m) for m in smiles_list]
+
+                    # Visualize molecules
+                    ms = [Chem.MolFromSmiles(smiles) for smiles in smiles_list]
+                    img = Draw.MolsToGridImage(
+                        ms,
+                        molsPerRow=4,
+                        subImgSize=(240, 150),
+                        legends=[f"Molecule {i+1}" for i in range(len(smiles_list))]
+                    )
+                    st.image(img)
+
+                    # Calculate QED scores
+                    qed_scores = [QED.qed(m) for m in ms]
+                    
+                    st.subheader("Generation Statistics")
+                    df = pd.DataFrame({
+                        'Molecule': [f"Molecule {i+1}" for i in range(len(smiles_list))],
+                        'QED Score': qed_scores
+                    })
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write("Score Statistics")
+                        st.write(df.describe())
+                    
+                    with col2:
+                        st.write("Score Distribution")
+                        fig, ax = plt.subplots()
+                        df['QED Score'].hist(ax=ax, bins=10)
+                        st.pyplot(fig)
+
+                    st.subheader("Generated SMILES")
+                    for i, (smiles, score) in enumerate(zip(smiles_list, qed_scores)):
+                        st.write(f"{i+1}. {smiles} (QED: {score:.3f})")
 
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
+                    st.write("Full error details:", str(e.__class__.__name__))
+                    import traceback
+                    st.write("Traceback:", traceback.format_exc())
 
 # BioNeMo Page
 elif page == "BioNeMo":
