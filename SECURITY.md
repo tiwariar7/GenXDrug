@@ -65,7 +65,7 @@ This document outlines the security measures and policies implemented in the Gen
 If you discover a security vulnerability within this application, please follow these steps:
 
 1. Do not disclose the vulnerability publicly until it has been addressed
-2. Contact the maintainers immediately at [your-email@example.com]
+2. Contact the maintainers immediately at [tiwariar279@gmail.com]
 3. Provide detailed information about the vulnerability
 4. Include steps to reproduce the issue
 5. Wait for acknowledgment and resolution
