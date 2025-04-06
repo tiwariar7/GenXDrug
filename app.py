@@ -95,7 +95,7 @@ def get_ai_response(user_query, context=""):
         return f"Error getting AI response: {str(e)}"
 
 # Sidebar navigation
-st.sidebar.title("GenXDrug : Advancing Research with Next-Gen Drug Solution ")
+st.sidebar.title("NVIDIA Bio AI Tools")
 page = st.sidebar.radio(
     "Select Tool",
     ["Protein Structure Prediction", "Molecular Generation", "BioNeMo", "Molecular Docking", "AI Assistant"]
@@ -109,17 +109,22 @@ def clean_api_key(key):
 
 # Protein Structure Prediction Page
 if page == "Protein Structure Prediction":
-    st.title("AlphaFold2 Protein Structure Prediction")
+    st.title("Protein Structure Prediction")
     st.markdown("""
-    This tool allows you to predict protein structures using NVIDIA's AlphaFold2 API. You can:
+    This tool allows you to predict protein structures using either AlphaFold2 or OpenFold. You can:
     - Input a protein sequence
+    - Choose between AlphaFold2 and OpenFold
     - Predict its 3D structure
     - Visualize the predicted structure
     - Download the PDB file
     """)
 
-    # Use API key from config
-    api_key = API_KEYS["alphafold"]
+    # Model selection
+    model = st.radio(
+        "Select Prediction Model",
+        ["AlphaFold2", "OpenFold"],
+        horizontal=True
+    )
 
     # Sequence input with validation
     def validate_sequence(seq):
@@ -135,24 +140,37 @@ if page == "Protein Structure Prediction":
 
     sequence = st.text_area(
         "Protein Sequence",
-        value="SGFRKMAFPSGKVEGCMVQVTCGTTTLNGLWLDDVVYCPRHVICTSEDMLNPNYEDLLIRKSNHNFLVQAGNVQLRVIGHSMQNCVLKLKVDTANPKTPKYKFVRIQPGQTFSVLACYNGSPSGVYQCAMRPNFTIKGSFLNGSCGSVGFNIDYDCVSFCYMHHMELPTGVHAGTDLEGNFYGPFVDRQTAQAAGTDTTITVNVLAWLYAAVINGDRWFLNRFTTTLNDFNLVAMKYNYEPLTQDHVDILGPLSAQTGIAVLDMCASLKELLQNGMNGRTILGSALLEDEFTPFDVVRQCSGVTFQ",
+        value="GGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC",
         height=200
     )
 
     # Advanced parameters
     with st.expander("Advanced Parameters"):
-        algorithm = st.selectbox("Algorithm", ["mmseqs2"], index=0)
-        e_value = st.number_input("E-value", value=0.0001, format="%.4f")
-        iterations = st.number_input("Iterations", value=1, min_value=1, max_value=5)
-        relax_prediction = st.checkbox("Relax Prediction", value=False)
-        skip_template_search = st.checkbox("Skip Template Search", value=True)
+        if model == "AlphaFold2":
+            algorithm = st.selectbox("Algorithm", ["mmseqs2"], index=0)
+            e_value = st.number_input("E-value", value=0.0001, format="%.4f")
+            iterations = st.number_input("Iterations", value=1, min_value=1, max_value=5)
+            relax_prediction = st.checkbox("Relax Prediction", value=False)
+            skip_template_search = st.checkbox("Skip Template Search", value=True)
+        else:  # OpenFold
+            st.markdown("### OpenFold Parameters")
+            selected_models = st.multiselect(
+                "Select Models",
+                [1, 2, 3, 4, 5],
+                default=[1, 2]
+            )
+            relax_prediction = st.checkbox("Relax Prediction", value=False)
+            
+            st.markdown("### MSA Alignment (Optional)")
+            msa_sequence = st.text_area(
+                "MSA Sequence",
+                value=">BQXYMDHSRWGGVPIWVK\nGGSKENEISHHAKEIERLQKEIERHKQSIKKLKQSEQSNPPPNPEGTRQARRNRRRRWRERQRQKENEISHHAKEIERLQKEIERHKQSIKKLKQSEC\n>A0A076V4A1_9HIV1\n------------------------------------QSNPPPNHEGTRQARRNRRRRWRERQRQ----------------------------------",
+                height=150,
+                help="Enter MSA alignment in A3M format"
+            )
 
     if st.button("Predict Structure"):
-        if not api_key:
-            st.error("Please enter your API key")
-        elif not api_key.startswith("nvapi-"):
-            st.error("API key must start with 'nvapi-'")
-        elif not sequence:
+        if not sequence:
             st.error("Please enter a protein sequence")
         else:
             is_valid, validation_result = validate_sequence(sequence)
@@ -162,40 +180,87 @@ if page == "Protein Structure Prediction":
             
             with st.spinner("Predicting structure..."):
                 try:
-                    clean_key = clean_api_key(api_key)
-                    url = "https://health.api.nvidia.com/v1/biology/deepmind/alphafold2"
-                    status_url = "https://health.api.nvidia.com/v1/status"
+                    if model == "AlphaFold2":
+                        url = "https://health.api.nvidia.com/v1/biology/deepmind/alphafold2"
+                        data = {
+                            "sequence": validation_result,
+                            "algorithm": algorithm,
+                            "e_value": e_value,
+                            "iterations": iterations,
+                            "databases": ["small_bfd"],
+                            "relax_prediction": relax_prediction,
+                            "skip_template_search": skip_template_search
+                        }
+                        headers = {
+                            "content-type": "application/json",
+                            "Authorization": "Bearer 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",
+                            "NVCF-POLL-SECONDS": "300",
+                        }
+                    else:  # OpenFold
+                        url = "https://health.api.nvidia.com/v1/biology/openfold/openfold2/predict-structure-from-msa-and-template"
+                        data = {
+                            "sequence": validation_result,
+                            "alignments": {
+                                "small_bfd": {
+                                    "a3m": {
+                                        "alignment": msa_sequence,
+                                        "format": "a3m",
+                                    }
+                                },
+                            },
+                            "selected_models": selected_models,
+                            "relax_prediction": relax_prediction,
+                        }
+                        headers = {
+                            "content-type": "application/json",
+                            "Authorization": "Bearer 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",
+                            "NVCF-POLL-SECONDS": "300",
+                        }
 
-                    headers = {
-                        "content-type": "application/json",
-                        "Authorization": f"Bearer {clean_key}",
-                        "NVCF-POLL-SECONDS": "300",
-                    }
-
-                    data = {
-                        "sequence": validation_result,
-                        "algorithm": algorithm,
-                        "e_value": e_value,
-                        "iterations": iterations,
-                        "databases": ["small_bfd"],
-                        "relax_prediction": relax_prediction,
-                        "skip_template_search": skip_template_search
-                    }
-
+                    # Make the API request
                     response = requests.post(url, headers=headers, json=data, timeout=30)
-                    response.raise_for_status()
-
+                    
                     if response.status_code == 200:
-                        pdb_string = response.json()[0]
+                        try:
+                            response_data = response.json()
+                            if model == "OpenFold":
+                                if "structures_in_ranked_order" in response_data:
+                                    pdb_string = response_data["structures_in_ranked_order"][0]["structure"]
+                                else:
+                                    st.error("Unexpected OpenFold response format")
+                                    st.stop()
+                            else:  # AlphaFold2
+                                if isinstance(response_data, list) and len(response_data) > 0:
+                                    pdb_string = response_data[0]
+                                else:
+                                    st.error("Unexpected AlphaFold2 response format")
+                                    st.stop()
+                        except json.JSONDecodeError as e:
+                            st.error(f"Error parsing response: {str(e)}")
+                            st.stop()
                     elif response.status_code == 202:
                         req_id = response.headers.get("nvcf-reqid")
+                        if not req_id:
+                            st.error("No request ID in response")
+                            st.stop()
+                            
+                        status_url = "https://health.api.nvidia.com/v1/status"
                         max_attempts = 60
                         attempt = 0
                         while attempt < max_attempts:
                             status_response = requests.get(f"{status_url}/{req_id}", headers=headers, timeout=30)
                             if status_response.status_code != 202:
-                                pdb_string = status_response.json()[0]
-                                break
+                                try:
+                                    status_data = status_response.json()
+                                    if isinstance(status_data, list) and len(status_data) > 0:
+                                        pdb_string = status_data[0]
+                                        break
+                                    else:
+                                        st.error("Unexpected status response format")
+                                        st.stop()
+                                except json.JSONDecodeError as e:
+                                    st.error(f"Error parsing status response: {str(e)}")
+                                    st.stop()
                             attempt += 1
                             time.sleep(5)
                         if attempt >= max_attempts:
@@ -205,33 +270,40 @@ if page == "Protein Structure Prediction":
                         st.error(f"Error: {response.status_code} - {response.text}")
                         st.stop()
 
+                    # Save the response to output1.json (but don't show it)
+                    output_file = Path("output1.json")
+                    output_file.write_text(response.text)
+
+                    # Create 3D visualization
+                    st.subheader("Predicted Structure")
+                    view = py3Dmol.view(width=1200, height=900)
+                    view.addModel(pdb_string, "pdb")
+                    view.setStyle({'cartoon': {'colorscheme': {'prop': 'b', 'gradient': 'roygb', 'min': 40, 'max': 100}}})
+                    view.zoomTo()
+                    showmol(view, height=900, width=1200)
+
+                    # Download button
                     with tempfile.NamedTemporaryFile(suffix=".pdb", delete=False) as tmp:
                         tmp.write(pdb_string.encode())
                         tmp_path = tmp.name
-
-                    st.subheader("Predicted Structure")
-                    view = py3Dmol.view(width=800, height=600)
-                    view.addModel(pdb_string, "pdb")
-                    view.zoomTo()
-                    view.setStyle({'cartoon': {'colorscheme': {'prop': 'b', 'gradient': 'roygb', 'min': 40, 'max': 100}}})
-                    showmol(view, height=600, width=800)
 
                     with open(tmp_path, "rb") as file:
                         st.download_button(
                             label="Download PDB File",
                             data=file,
-                            file_name="predicted_structure.pdb",
+                            file_name=f"predicted_structure_{model.lower()}.pdb",
                             mime="chemical/x-pdb"
                         )
 
-                    os.unlink(tmp_path)
-
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
+                    st.write("Full error details:", str(e.__class__.__name__))
+                    import traceback
+                    st.write("Traceback:", traceback.format_exc())
 
 # Molecular Generation Page
-elif page == "Molecular Generation":
-    st.title("Molecular Generation using NVIDIA GenMol")
+elif page == "GenXDrug":
+    st.title("GenXDrug : Advancing Research with Next-Gen Drug Solution ")
     st.markdown("""
     This tool allows you to generate new molecules using NVIDIA's GenMol API. You can:
     - Generate molecules from scratch
